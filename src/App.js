@@ -162,7 +162,62 @@ class App extends React.Component {
 
   withdraw = async () => {
     this.logError(""); // Reset error.
-    // TODO
+
+    const { web3, renJS, balance } = this.state;
+
+    const recipient = prompt("Enter BTC recipient:");
+    const amount = balance;
+    const burnAndRelease = await renJS.burnAndRelease({
+      // Send BTC from Ethereum back to the Bitcoin blockchain.
+      asset: "BTC",
+      to: Bitcoin().Address(recipient),
+      from: Ethereum(web3.currentProvider).Contract((btcAddress) => ({
+        sendTo: contractAddress,
+
+        contractFn: "withdraw",
+
+        contractParams: [
+          {
+            type: "bytes",
+            name: "_msg",
+            value: Buffer.from(`Withdrawing ${amount} BTC`),
+          },
+          {
+            type: "bytes",
+            name: "_to",
+            value: Buffer.from(btcAddress),
+          },
+          {
+            type: "uint256",
+            name: "_amount",
+            value: RenJS.utils.toSmallestUnit(amount, 8),
+          },
+        ],
+      })),
+    });
+
+    let confirmations = 0;
+    await burnAndRelease
+      .burn()
+      // Ethereum transaction confirmations.
+      .on("confirmation", (confs) => {
+        confirmations = confs;
+      })
+      // Print Ethereum transaction hash.
+      .on("transactionHash", (txHash) => this.log(`txHash: ${String(txHash)}`));
+
+    await burnAndRelease
+      .release()
+      // Print RenVM status - "pending", "confirming" or "done".
+      .on("status", (status) =>
+        status === "confirming"
+          ? this.log(`${status} (${confirmations}/15)`)
+          : this.log(status)
+      )
+      // Print RenVM transaction hash
+      .on("txHash", this.log);
+
+    this.log(`Withdrew ${amount} BTC to ${recipient}.`);
   };
 }
 

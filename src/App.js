@@ -1,5 +1,7 @@
 import React from "react";
 import Web3 from "web3";
+import RenJS from "@renproject/ren";
+import { Bitcoin, Ethereum } from "@renproject/chains";
 import "./App.css";
 
 import ABI from "./ABI.json";
@@ -13,6 +15,7 @@ class App extends React.Component {
     this.state = {
       balance: 0,
       message: "",
+      renJS: new RenJS("testnet"),
       error: "",
     };
   }
@@ -98,7 +101,63 @@ class App extends React.Component {
 
   deposit = async () => {
     this.logError(""); // Reset error.
-    // TODO
+
+    const { web3, renJS } = this.state;
+
+    const amount = 0.003; // BTC
+    const mint = await renJS.lockAndMint({
+      // Send BTC from the Bitcoin blockchain to the Ethereum blockchain.
+      asset: "BTC",
+      from: Bitcoin(),
+      to: Ethereum(web3.currentProvider).Contract({
+        // The contract we want to interact with
+        sendTo: contractAddress,
+
+        // The name of the function we want to call
+        contractFn: "deposit",
+
+        // Arguments expected for calling `deposit`
+        contractParams: [
+          {
+            name: "_msg",
+            type: "bytes",
+            value: Buffer.from(`Depositing ${amount} BTC`),
+          },
+        ],
+      }),
+    });
+
+    // Show the gateway address to the user so that they can transfer their BTC to it.
+    this.log(`Deposit ${amount} BTC to ${mint.gatewayAddress}`);
+
+    mint.on("deposit", async (deposit) => {
+      // Details of the deposit are available from `deposit.depositDetails`.
+
+      const hash = deposit.txHash();
+      const depositLog = (msg) =>
+        this.log(`[${hash.slice(0, 8)}][${deposit.status}] ${msg}`);
+
+      await deposit
+        .confirmed()
+        .on("target", (confs, target) =>
+          depositLog(`${confs}/${target} confirmations`)
+        )
+        .on("confirmation", (confs, target) =>
+          depositLog(`${confs}/${target} confirmations`)
+        );
+
+      await deposit
+        .signed()
+        // Print RenVM status - "pending", "confirming" or "done".
+        .on("status", (status) => depositLog(`Status: ${status}`));
+
+      await deposit
+        .mint()
+        // Print Ethereum transaction hash.
+        .on("transactionHash", (txHash) => depositLog(`Mint tx: ${txHash}`));
+    });
+
+    this.log(`Deposited ${amount} BTC.`);
   };
 
   withdraw = async () => {
